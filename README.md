@@ -4,8 +4,8 @@ This repository contains a complete solution for the Asymetric Ventures technica
 
 ## Live Deployment
 
-- Application: http://[deployed-ec2-ip]
-- Backend API: http://[deployed-ec2-ip]:3001/articles
+- Application: http://[[deployed-ec2-ip]](http://13.38.249.91/)
+- Backend API: http://[[deployed-ec2-ip]](http://13.38.249.91/):3001/articles
 
 ## Overview
 
