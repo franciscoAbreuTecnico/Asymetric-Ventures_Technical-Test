@@ -1,0 +1,37 @@
+version: 0.2
+
+env:
+  variables:
+    IMAGE_TAG: "latest"
+  # It is recommended to set the following variables in the CodeBuild project
+  # configuration rather than hard‑coding them here:
+  #   AWS_REGION   - AWS region (e.g. eu-west-1)
+  #   ECR_REGISTRY - URI of your ECR registry (<account-id>.dkr.ecr.<region>.amazonaws.com)
+  #   ECR_REPO     - Name of your ECR repository (e.g. my-blog)
+
+phases:
+  pre_build:
+    commands:
+      - echo "Logging in to Amazon ECR..."
+      - aws --version
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+      - COMMIT_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - echo "Computed commit tag: $COMMIT_TAG"
+  build:
+    commands:
+      - echo "Building Docker images..."
+      - docker build -t $ECR_REPO/backend:$COMMIT_TAG -t $ECR_REPO/backend:$IMAGE_TAG ./backend
+      - docker build -t $ECR_REPO/frontend:$COMMIT_TAG -t $ECR_REPO/frontend:$IMAGE_TAG ./frontend
+  post_build:
+    commands:
+      - echo "Pushing images to ECR..."
+      - docker push $ECR_REPO/backend:$COMMIT_TAG
+      - docker push $ECR_REPO/backend:$IMAGE_TAG
+      - docker push $ECR_REPO/frontend:$COMMIT_TAG
+      - docker push $ECR_REPO/frontend:$IMAGE_TAG
+      - echo "Build and push complete"
+
+artifacts:
+  files:
+    # Include everything so that the infrastructure scripts and code are available
+    - '**/*'

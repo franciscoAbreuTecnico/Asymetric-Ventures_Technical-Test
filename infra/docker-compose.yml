@@ -1,0 +1,25 @@
+services:
+  backend:
+    build:
+      context: ../backend
+    container_name: auto-blog-backend
+    ports:
+      - "3001:3001"
+    env_file:
+      - ../backend/.env
+    environment:
+      - PORT=3001
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend:
+    build:
+      context: ../frontend
+    container_name: auto-blog-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      # Tell the React app how to reach the backend from the browser
+      - VITE_BACKEND_URL=http://localhost:3001
+    depends_on:
+      - backend
