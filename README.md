@@ -87,19 +87,21 @@ Reasoning:
 - Zero configuration required
 
 ### Deployment Strategy
-Choice: Manual deployment with ECR + EC2
+Choice: AWS CodeBuild CI/CD pipeline with ECR + EC2
 
 Reasoning:
-- Direct control over deployment process
-- Simpler debugging and iteration
-- CodeBuild infrastructure available (buildspec.yml) but not used for this demo
-- Can add full CI/CD automation later if needed
+- Automated build and deployment on every git push
+- Centralized build environment with consistent results
+- No local Docker builds required
+- Webhook integration for continuous integration
+- Follows AWS best practices for cloud-native deployments
 
-Process:
-1. Build Docker images locally
-2. Push to ECR
-3. SSH to EC2 and pull images
-4. Run containers with configured environment
+Pipeline:
+1. Developer pushes code to GitHub
+2. GitHub webhook triggers CodeBuild automatically
+3. CodeBuild builds Docker images using buildspec.yml
+4. Images pushed to ECR with commit hash and latest tags
+5. EC2 pulls and runs updated containers (manual or automated)
 
 ### Security
 - Rate limiting: 5 requests/hour per IP on generation endpoint
@@ -131,41 +133,66 @@ The backend will automatically create 3 articles on first startup. New articles 
 
 ## AWS Deployment
 
+### Infrastructure Components
+- **CodeBuild**: Automated CI/CD pipeline triggered by GitHub webhooks
+- **ECR**: Docker image registry storing backend and frontend images
+- **EC2**: t3.small instance (2GB RAM) running containerized application
+- **IAM**: Service role for CodeBuild with ECR and CloudWatch permissions
+- **CloudWatch**: Build logs and billing alarms
+
+### Deployment Architecture
+
+```
+GitHub Push → Webhook → CodeBuild → Build Images → Push to ECR → EC2 pulls and runs
+```
+
 ### Example Deployment Configuration
 - Region: eu-west-3 (Paris)
 - Instance Type: t3.small (2GB RAM, free tier eligible)
 - ECR Registry: <account-id>.dkr.ecr.eu-west-3.amazonaws.com/auto-blog
 - Security Group: Allow ports 22 (SSH), 80 (HTTP), 3001 (API)
+- CodeBuild Project: auto-blog-build (standard:7.0 Linux container)
 - Monthly Cost: $0.00 (within free tier limits)
 
-### Deployment Steps
+### Initial Setup
 
-1. Create ECR repository:
+1. **Create ECR repository**:
 ```bash
 aws ecr create-repository --repository-name auto-blog --region eu-west-3
 ```
 
-2. Build and push Docker images:
+2. **Create CodeBuild IAM role**:
 ```bash
-aws ecr get-login-password --region eu-west-3 | docker login --username AWS --password-stdin <account-id>.dkr.ecr.eu-west-3.amazonaws.com
+aws iam create-role --role-name CodeBuildServiceRole \
+  --assume-role-policy-document file://infra/codebuild-trust-policy.json
 
-docker build -t infra-backend backend
-docker build --build-arg VITE_BACKEND_URL=http://<EC2-IP>:3001 -t infra-frontend frontend
-
-docker tag infra-backend <account-id>.dkr.ecr.eu-west-3.amazonaws.com/auto-blog:backend-latest
-docker tag infra-frontend <account-id>.dkr.ecr.eu-west-3.amazonaws.com/auto-blog:frontend-latest
-
-docker push <account-id>.dkr.ecr.eu-west-3.amazonaws.com/auto-blog:backend-latest
-docker push <account-id>.dkr.ecr.eu-west-3.amazonaws.com/auto-blog:frontend-latest
+aws iam put-role-policy --role-name CodeBuildServiceRole \
+  --policy-name CodeBuildPolicy \
+  --policy-document file://infra/codebuild-policy.json
 ```
 
-3. Launch EC2 instance:
+3. **Create CodeBuild project**:
+```bash
+aws codebuild create-project \
+  --name auto-blog-build \
+  --source type=GITHUB,location=https://github.com/<your-username>/<repo>.git,buildspec=infra/buildspec.yml \
+  --artifacts type=NO_ARTIFACTS \
+  --environment type=LINUX_CONTAINER,image=aws/codebuild/standard:7.0,computeType=BUILD_GENERAL1_SMALL,privilegedMode=true \
+  --service-role arn:aws:iam::<account-id>:role/CodeBuildServiceRole
+```
+
+4. **Set up GitHub webhook**:
+- Go to AWS Console → CodeBuild → auto-blog-build → Edit → Source
+- Connect to GitHub and authorize
+- Enable "Rebuild every time a code change is pushed"
+
+5. **Launch EC2 instance**:
 - Amazon Linux 2023
 - Instance type: t3.small (2GB RAM required for local AI model)
 - Security group: Allow ports 22 (SSH), 80 (HTTP), 3001 (API)
-- Use infra/scripts/init-ec2.sh to install Docker
+- User data or SSH to run: `infra/scripts/init-ec2.sh`
 
-4. Deploy containers on EC2:
+6. **Deploy containers on EC2**:
 ```bash
 docker network create auto-blog-network
 
@@ -207,15 +234,16 @@ See infra/scripts/deploy.sh for the complete deployment script.
 
 With more time, the following improvements would enhance the system:
 
-1. CI/CD Pipeline: Automate builds and deployments using CodeBuild with GitHub webhooks
-2. HTTPS: Add SSL certificate via AWS Certificate Manager with Application Load Balancer
-3. Elastic IP: Prevent IP changes on instance restarts
-4. Monitoring: CloudWatch dashboards for resource usage, errors, and request metrics
-5. Database Backups: Automated S3 backups of SQLite database
-6. Better AI Model: Upgrade to larger model for higher quality content (requires GPU instance)
-7. Testing: Unit and integration tests for backend and frontend
-8. Caching: Add Redis for API response caching
-9. CDN: CloudFront distribution for frontend assets
+1. **Automated EC2 Deployment**: Add webhook or polling mechanism for EC2 to pull latest images automatically after CodeBuild completes
+2. **HTTPS**: Add SSL certificate via AWS Certificate Manager with Application Load Balancer
+3. **Elastic IP**: Prevent IP changes on instance restarts
+4. **Monitoring**: CloudWatch dashboards for resource usage, errors, and request metrics
+5. **Database Backups**: Automated S3 backups of SQLite database
+6. **Better AI Model**: Upgrade to larger model for higher quality content (requires GPU instance)
+7. **Testing**: Unit and integration tests for backend and frontend with automated CI testing
+8. **Caching**: Add Redis for API response caching
+9. **CDN**: CloudFront distribution for frontend assets
+10. **Infrastructure as Code**: Convert manual steps to Terraform or CloudFormation
 
 ## Cost Analysis
 
