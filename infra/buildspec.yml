@@ -2,34 +2,36 @@ version: 0.2
 
 env:
   variables:
+    AWS_DEFAULT_REGION: "eu-west-3"
+    AWS_REGION: "eu-west-3"
+    ECR_REPO_NAME: "auto-blog"
     IMAGE_TAG: "latest"
-  # It is recommended to set the following variables in the CodeBuild project
-  # configuration rather than hard‑coding them here:
-  #   AWS_REGION   - AWS region (e.g. eu-west-1)
-  #   ECR_REGISTRY - URI of your ECR registry (<account-id>.dkr.ecr.<region>.amazonaws.com)
-  #   ECR_REPO     - Name of your ECR repository (e.g. my-blog)
 
 phases:
   pre_build:
     commands:
       - echo "Logging in to Amazon ECR..."
       - aws --version
+      - export ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+      - echo "ECR Registry = $ECR_REGISTRY"
       - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
       - COMMIT_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
-      - echo "Computed commit tag: $COMMIT_TAG"
+      - echo "Commit tag = $COMMIT_TAG"
   build:
     commands:
-      - echo "Building Docker images..."
-      - docker build -t $ECR_REPO/backend:$COMMIT_TAG -t $ECR_REPO/backend:$IMAGE_TAG ./backend
-      - docker build -t $ECR_REPO/frontend:$COMMIT_TAG -t $ECR_REPO/frontend:$IMAGE_TAG ./frontend
+      - echo "Building backend Docker image..."
+      - docker build -t $ECR_REGISTRY/$ECR_REPO_NAME:backend-$COMMIT_TAG -t $ECR_REGISTRY/$ECR_REPO_NAME:backend-latest ./backend
+      - echo "Building frontend Docker image with backend URL..."
+      - docker build --build-arg VITE_BACKEND_URL=${BACKEND_URL} -t $ECR_REGISTRY/$ECR_REPO_NAME:frontend-$COMMIT_TAG -t $ECR_REGISTRY/$ECR_REPO_NAME:frontend-latest ./frontend
   post_build:
     commands:
-      - echo "Pushing images to ECR..."
-      - docker push $ECR_REPO/backend:$COMMIT_TAG
-      - docker push $ECR_REPO/backend:$IMAGE_TAG
-      - docker push $ECR_REPO/frontend:$COMMIT_TAG
-      - docker push $ECR_REPO/frontend:$IMAGE_TAG
-      - echo "Build and push complete"
+      - echo "Pushing backend images to ECR..."
+      - docker push $ECR_REGISTRY/$ECR_REPO_NAME:backend-$COMMIT_TAG
+      - docker push $ECR_REGISTRY/$ECR_REPO_NAME:backend-latest
+      - echo "Pushing frontend images to ECR..."
+      - docker push $ECR_REGISTRY/$ECR_REPO_NAME:frontend-$COMMIT_TAG
+      - docker push $ECR_REGISTRY/$ECR_REPO_NAME:frontend-latest
+      - echo "Build and push complete for commit $COMMIT_TAG"
 
 artifacts:
   files:
